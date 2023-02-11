@@ -10,7 +10,7 @@ import numpy as np
 import torch.nn as nn
 import torch.optim
 from torch.utils.data import DataLoader, Dataset
-
+from torch.utils.data import Subset
 
 class ContinualDataset:
     """
@@ -106,11 +106,56 @@ def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
     :param setting: continual learning setting
     :return: train and test loaders
     """
+    
+    if setting.args.dataset == 'seq-GrainSpace':
+        train_mask = torch.logical_and(torch.tensor(train_dataset.targets) >= setting.i, torch.tensor(train_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+        test_mask = torch.logical_and(torch.tensor(test_dataset.targets) >= setting.i, torch.tensor(test_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+        
+        # extract the data and targets for the current task
+        train_indices = train_mask.nonzero().reshape(-1)
+        train_subset = Subset(train_dataset, train_indices)
+        train_loader = DataLoader(train_subset,
+                                  batch_size=setting.args.batch_size, shuffle=True, num_workers=4)
+                                  
+                                  
+        test_indices = test_mask.nonzero().reshape(-1)
+        test_subset = Subset(test_dataset, test_indices)
+        test_loader = DataLoader(test_subset,
+                                 batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
+        
+    
+        # add all previous test loaders (CL scenario)
+        setting.test_loaders.append(test_loader)
+        setting.train_loader = train_loader
+    
+        setting.i += setting.N_CLASSES_PER_TASK
+        return train_loader, test_loader
+    
+    #     # Get index of all sample from NOR class
+    #     norIndexs = np.where(np.array(train_dataset.targets) == train_dataset.norLabel)[0]
+    #     # Equally divided it into x parts and paired with the other classes
+    #     currentNorIndexs = norIndexs[setting.i:setting.i + setting.N_CLASSES_PER_TASK]
+        
+        
+        
+    # the range of class for the current task 
+    # if N_CLASSES_PER_TASK = 2
+    # task 1 = class 1-2
+    
+    # print(train_dataset.targets)
+    # 1d array with all the labels
+    # print(train_dataset.data)
+    # data nx3x32x32
+    
+    # takes 15 sec before even start training
+    
+    
     train_mask = np.logical_and(np.array(train_dataset.targets) >= setting.i,
                                 np.array(train_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
     test_mask = np.logical_and(np.array(test_dataset.targets) >= setting.i,
                                np.array(test_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
-
+    
+    # extract the data and targets for the current task
     train_dataset.data = train_dataset.data[train_mask]
     test_dataset.data = test_dataset.data[test_mask]
 
@@ -121,6 +166,8 @@ def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
                               batch_size=setting.args.batch_size, shuffle=True, num_workers=4)
     test_loader = DataLoader(test_dataset,
                              batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
+    
+    # add all previous test loaders (CL scenario)
     setting.test_loaders.append(test_loader)
     setting.train_loader = train_loader
 

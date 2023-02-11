@@ -99,6 +99,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
     progress_bar = ProgressBar(verbose=not args.non_verbose)
 
+    # before training, evaluate model without training?
     if not args.ignore_other_metrics:
         dataset_copy = get_dataset(args)
         for t in range(dataset.N_TASKS):
@@ -120,6 +121,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                 results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
 
         scheduler = dataset.get_scheduler(model, args)
+        # start training
         for epoch in range(model.args.n_epochs):
             if args.model == 'joint':
                 continue
@@ -132,6 +134,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                     labels = labels.to(model.device)
                     not_aug_inputs = not_aug_inputs.to(model.device)
                     logits = logits.to(model.device)
+                    # using abstract model observe function (nice)
                     loss = model.meta_observe(inputs, labels, not_aug_inputs, logits)
                 else:
                     inputs, labels, not_aug_inputs = data

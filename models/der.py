@@ -37,8 +37,10 @@ class Der(ContinualModel):
         loss = self.loss(outputs, labels)
 
         if not self.buffer.is_empty():
+            # get data from buffer
             buf_inputs, buf_logits = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.transform)
+            # distill knowledge from buffer data
             buf_outputs = self.net(buf_inputs)
             loss += self.args.alpha * F.mse_loss(buf_outputs, buf_logits)
 

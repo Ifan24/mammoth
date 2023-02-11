@@ -8,6 +8,7 @@ import importlib
 import os
 import socket
 import sys
+from pathlib import Path
 
 
 mammoth_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +59,13 @@ def parse_args():
         parser.add_argument('--dataset', type=str, required=True,
                             choices=DATASET_NAMES,
                             help='Which dataset to perform experiments on.')
+                                             
+        # python utils/main.py --model der --load_best_args --buffer_size 200 --dataset seq_cifar10 --nowand 1
+        
+        # python utils/main.py --nowand 1 --model der --load_best_args --buffer_size 200 --dataset seq-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
+        # python utils/main.py --model der --load_best_args --buffer_size 200 --dataset seq-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
+        
+        
         if hasattr(mod, 'Buffer'):
             parser.add_argument('--buffer_size', type=int, required=True,
                                 help='The size of the memory buffer.')

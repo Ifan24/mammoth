@@ -81,6 +81,7 @@ class SequentialCIFAR10(ContinualDataset):
 
         train_dataset = MyCIFAR10(base_path() + 'CIFAR10', train=True,
                                   download=True, transform=transform)
+        # train_dataset.targets
         if self.args.validation:
             train_dataset, test_dataset = get_train_val(train_dataset,
                                                     test_transform, self.NAME)

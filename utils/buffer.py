@@ -139,6 +139,8 @@ class Buffer:
             self.init_tensors(examples, labels, logits, task_labels)
 
         for i in range(examples.shape[0]):
+            # before the reservoir is full, add example to the reservoir
+            # after the reservoir is full, randomly replace one of the example in the reservoir
             index = reservoir(self.num_seen_examples, self.buffer_size)
             self.num_seen_examples += 1
             if index >= 0:
