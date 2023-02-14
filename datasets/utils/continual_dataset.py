@@ -107,29 +107,29 @@ def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
     :return: train and test loaders
     """
     
-    if setting.args.dataset == 'seq-GrainSpace':
-        train_mask = torch.logical_and(torch.tensor(train_dataset.targets) >= setting.i, torch.tensor(train_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
-        test_mask = torch.logical_and(torch.tensor(test_dataset.targets) >= setting.i, torch.tensor(test_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+    # if setting.args.dataset == 'seq-GrainSpace':
+    #     train_mask = torch.logical_and(torch.tensor(train_dataset.targets) >= setting.i, torch.tensor(train_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+    #     test_mask = torch.logical_and(torch.tensor(test_dataset.targets) >= setting.i, torch.tensor(test_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
         
-        # extract the data and targets for the current task
-        train_indices = train_mask.nonzero().reshape(-1)
-        train_subset = Subset(train_dataset, train_indices)
-        train_loader = DataLoader(train_subset,
-                                  batch_size=setting.args.batch_size, shuffle=True, num_workers=4)
+    #     # extract the data and targets for the current task
+    #     train_indices = train_mask.nonzero().reshape(-1)
+    #     train_subset = Subset(train_dataset, train_indices)
+    #     train_loader = DataLoader(train_subset,
+    #                               batch_size=setting.args.batch_size, shuffle=True, num_workers=4)
                                   
                                   
-        test_indices = test_mask.nonzero().reshape(-1)
-        test_subset = Subset(test_dataset, test_indices)
-        test_loader = DataLoader(test_subset,
-                                 batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
+    #     test_indices = test_mask.nonzero().reshape(-1)
+    #     test_subset = Subset(test_dataset, test_indices)
+    #     test_loader = DataLoader(test_subset,
+    #                              batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
         
     
-        # add all previous test loaders (CL scenario)
-        setting.test_loaders.append(test_loader)
-        setting.train_loader = train_loader
+    #     # add all previous test loaders (CL scenario)
+    #     setting.test_loaders.append(test_loader)
+    #     setting.train_loader = train_loader
     
-        setting.i += setting.N_CLASSES_PER_TASK
-        return train_loader, test_loader
+    #     setting.i += setting.N_CLASSES_PER_TASK
+    #     return train_loader, test_loader
     
     #     # Get index of all sample from NOR class
     #     norIndexs = np.where(np.array(train_dataset.targets) == train_dataset.norLabel)[0]

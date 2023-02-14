@@ -14,6 +14,7 @@ from torchvision import transforms
 from models.utils.continual_model import ContinualModel
 from utils.args import add_management_args, add_experiment_args, ArgumentParser
 from utils.status import progress_bar
+from torch.utils.data import Subset
 
 
 def get_parser() -> ArgumentParser:
@@ -32,11 +33,13 @@ class Joint(ContinualModel):
         self.old_data = []
         self.old_labels = []
         self.current_task = 0
-
+        # self.old_indices = []
     def end_task(self, dataset):
         if dataset.SETTING != 'domain-il':
-            self.old_data.append(dataset.train_loader.dataset.data)
-            self.old_labels.append(torch.tensor(dataset.train_loader.dataset.targets))
+            if 'GrainSpace' not in dataset.NAME:
+                self.old_data.append(dataset.train_loader.dataset.data)
+                self.old_labels.append(torch.tensor(dataset.train_loader.dataset.targets))
+                
             self.current_task += 1
 
             # # for non-incremental joint training
@@ -50,23 +53,32 @@ class Joint(ContinualModel):
             self.opt = SGD(self.net.parameters(), lr=self.args.lr)
 
             # prepare dataloader
-            all_data, all_labels = None, None
-            for i in range(len(self.old_data)):
-                if all_data is None:
-                    all_data = self.old_data[i]
-                    all_labels = self.old_labels[i]
-                else:
-                    all_data = np.concatenate([all_data, self.old_data[i]])
-                    all_labels = np.concatenate([all_labels, self.old_labels[i]])
-
-            transform = dataset.TRANSFORM if dataset.TRANSFORM is not None else transforms.ToTensor()
-            temp_dataset = ValidationDataset(all_data, all_labels, transform=transform)
+            
+            if 'GrainSpace' in dataset.NAME:
+                temp_dataset = dataset.train_loader.dataset.dataset
+                
+            else:
+                all_data, all_labels = None, None
+                for i in range(len(self.old_data)):
+                    if all_data is None:
+                        all_data = self.old_data[i]
+                        all_labels = self.old_labels[i]
+                    else:
+                        all_data = np.concatenate([all_data, self.old_data[i]])
+                        all_labels = np.concatenate([all_labels, self.old_labels[i]])
+    
+                transform = dataset.TRANSFORM if dataset.TRANSFORM is not None else transforms.ToTensor()
+                temp_dataset = ValidationDataset(all_data, all_labels, transform=transform)
+                
             loader = torch.utils.data.DataLoader(temp_dataset, batch_size=self.args.batch_size, shuffle=True)
-
+                
             # train
             for e in range(self.args.n_epochs):
                 for i, batch in enumerate(loader):
-                    inputs, labels = batch
+                    if 'GrainSpace' in dataset.NAME:
+                        inputs, labels, _ = batch
+                    else:
+                        inputs, labels = batch
                     inputs, labels = inputs.to(self.device), labels.to(self.device)
 
                     self.opt.zero_grad()

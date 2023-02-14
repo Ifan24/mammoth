@@ -61,9 +61,12 @@ def parse_args():
                             help='Which dataset to perform experiments on.')
                                              
         # python utils/main.py --model der --load_best_args --buffer_size 200 --dataset seq_cifar10 --nowand 1
+        #  --nowand 1
         
-        # python utils/main.py --nowand 1 --model der --load_best_args --buffer_size 200 --dataset seq-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
         # python utils/main.py --model der --load_best_args --buffer_size 200 --dataset seq-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
+        # python utils/main.py --seed 1024 --model der --load_best_args --buffer_size 5120 --dataset seq-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
+        # python utils/main.py --seed 1024 --model der --load_best_args --buffer_size 500 --dataset split-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
+        # python utils/main.py --seed 1024 --model joint --load_best_args --dataset split-GrainSpace --dataset_path GrainSpace/WHEAT_R1-14_G600
         
         
         if hasattr(mod, 'Buffer'):

@@ -30,9 +30,16 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
     :param dataset: the continual dataset
     :param k: the task index
     """
-    outputs[:, 0:k * dataset.N_CLASSES_PER_TASK] = -float('inf')
-    outputs[:, (k + 1) * dataset.N_CLASSES_PER_TASK:
-               dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
+    if dataset.NAME == 'split-GrainSpace':
+        # only allow to make prediction for the classes belonging to the target task
+        norIndex = dataset.class_to_idx['NOR']
+        task_class = k if k < norIndex else k + 1
+        non_task_indices = [i for i, c in enumerate(dataset.classes) if i != task_class and i != norIndex]
+        outputs[:, non_task_indices] = -float('inf')
+    else:
+        outputs[:, 0:k * dataset.N_CLASSES_PER_TASK] = -float('inf')
+        outputs[:, (k + 1) * dataset.N_CLASSES_PER_TASK:
+                   dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
 
 
 def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tuple[list, list]:
@@ -50,6 +57,8 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
         if last and k < len(dataset.test_loaders) - 1:
             continue
         correct, correct_mask_classes, total = 0.0, 0.0, 0.0
+        # correct: class-il accuracy, accuracy on all past test sets
+        # correct_mask_classes: task-il accuracy, model can only make a prediction within the set of classes belonging to the target's task
         for data in test_loader:
             with torch.no_grad():
                 inputs, labels = data
@@ -60,10 +69,14 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
                     outputs = model(inputs)
 
                 _, pred = torch.max(outputs.data, 1)
+                # how many samples for that task are correctly classified
                 correct += torch.sum(pred == labels).item()
                 total += labels.shape[0]
-
+                if 'GrainSpace' in dataset.NAME:
+                    f1 = dataset.f1(pred, labels)
+                    
                 if dataset.SETTING == 'class-il':
+                    # mask the outputs for the other classes
                     mask_classes(outputs, dataset, k)
                     _, pred = torch.max(outputs.data, 1)
                     correct_mask_classes += torch.sum(pred == labels).item()

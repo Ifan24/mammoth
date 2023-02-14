@@ -1,11 +1,13 @@
 from typing import Tuple
 
+import torch
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Subset
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from backbone.ResNet18 import resnet18
 from PIL import Image
-from torchvision.datasets import CIFAR10
 
 from datasets.seq_tinyimagenet import base_path
 from datasets.transforms.denormalization import DeNormalize
@@ -13,11 +15,13 @@ from datasets.utils.continual_dataset import (ContinualDataset,
                                               store_masked_loaders)
 from datasets.utils.validation import get_train_val
 
-import os
 from torch.utils.data import Dataset
 from torchvision.datasets import ImageFolder
 import numpy as np
 import torchvision.models as models
+from argparse import Namespace
+import time
+from torchmetrics.classification import F1Score
 
 
 class GrainDataset(ImageFolder):
@@ -28,6 +32,16 @@ class GrainDataset(ImageFolder):
                 transforms.CenterCrop(224),
                 transforms.ToTensor()
             ])
+            
+        # don't lazy load
+        # self.subset = MySubset(self)
+        # self.data = []
+        # start = time.time()
+        # for img in self.imgs:
+        #     self.data.append(self.loader(img[0]))
+        # end = time.time()
+        # 33s
+        # print(end - start)
         
     def __getitem__(self, index: int):
         """
@@ -47,69 +61,54 @@ class GrainDataset(ImageFolder):
             sample = self.transform(sample)
         if self.target_transform is not None:
             target = self.target_transform(target)
-
+        
         return sample, target, not_aug_img
         
         
-# class GrainDataset(Dataset):
-#     def __init__(self, root, transform=None, target_transform=None):
-#         self.not_aug_transform = transforms.Compose([transforms.ToTensor()])
-#         self.transform = transform
-#         self.target_transform = target_transform
-#         self.data_dir = root
-#         self.classes = os.listdir(root)
-#         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
-#         self.samples = [(c, os.path.join(c, filename)) for c in self.classes
-#                         for filename in os.listdir(os.path.join(root, c))]
-        
-#         # all labels
-#         self.targets = [self.class_to_idx[i[0]] for i in self.samples]
-#         self.data = []
-        
-#         for sample in self.samples:
-#             image = Image.open(os.path.join(self.data_dir, sample[1]))
-#             image = self.transform(image)
-#             self.data.append(image)
-        
-#         # turn into numpy array
-#         # self.data = np.vstack(self.data).reshape(-1, 3, 224, 224)
-#         # self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
-        
-#         self.norLabel = self.class_to_idx['NOR']
-        
+def store_grain_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
+                         setting: ContinualDataset) -> Tuple[DataLoader, DataLoader]:
+    """
+    Divides the dataset into tasks.
+    :param train_dataset: train dataset
+    :param test_dataset: test dataset
+    :param setting: continual learning setting
+    :return: train and test loaders
+    """
+    
+    # create a mask for the current task
+    train_mask = torch.logical_and(torch.tensor(train_dataset.targets) >= setting.i, torch.tensor(train_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+    test_mask = torch.logical_and(torch.tensor(test_dataset.targets) >= setting.i, torch.tensor(test_dataset.targets) < setting.i + setting.N_CLASSES_PER_TASK)
+    
+    # extract the data and targets for the current task
+    train_indices = train_mask.nonzero().reshape(-1)
+    train_subset = Subset(train_dataset, train_indices)
+    train_loader = DataLoader(train_subset,
+                              batch_size=setting.args.batch_size, shuffle=True, num_workers=4)
+                              
+    test_indices = test_mask.nonzero().reshape(-1)
+    test_subset = Subset(test_dataset, test_indices)
+    test_loader = DataLoader(test_subset,
+                             batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
         
         
-#     def __len__(self):
-#         return len(self.samples)
+    # add all previous test loaders (CL scenario)
+    setting.test_loaders.append(test_loader)
+    setting.train_loader = train_loader
 
-#     def __getitem__(self, idx: int) -> Tuple[Image.Image, int, Image.Image]:
-#         # Load the image and its corresponding label
-#         class_name, filename = self.samples[idx]
-#         image = Image.open(os.path.join(self.data_dir, filename))
-        
-#         original_img = image.copy()
-#         not_aug_img = self.not_aug_transform(original_img)
-        
-#         label = self.class_to_idx[class_name]
-#         if self.transform is not None:
-#             image = self.transform(image)
-#         if self.target_transform is not None:
-#             label = self.target_transform(label)
-        
-#         if hasattr(self, 'logits'):
-#             return image, label, not_aug_img, self.logits[idx]
-            
-#         return image, label, not_aug_img
-        
-
+    setting.i += setting.N_CLASSES_PER_TASK
+    return train_loader, test_loader
 class SequentialGrainSpace(ContinualDataset):
 
     NAME = 'seq-GrainSpace'
     SETTING = 'class-il'
-    N_CLASSES_PER_TASK = 2
-    # split NORMAL into 6 subsets
-    N_TASKS = 4
     N_CLASSES = 7
+    N_CLASSES_PER_TASK = 2
+    N_TASKS = 4
+    # Sequential
+    # Task1: AP, BN
+    # Task2: BP, FS
+    # Task3: MY, NOR
+    # Task4: SD
     
     TRANSFORM = transforms.Compose(
             [
@@ -141,9 +140,9 @@ class SequentialGrainSpace(ContinualDataset):
         else:
             test_dataset = ImageFolder(test_path, transform=test_transform)
             
-
-        train, test = store_masked_loaders(train_dataset, test_dataset, self)
+        train, test = store_grain_masked_loaders(train_dataset, test_dataset, self)
         return train, test
+        
 
     @staticmethod
     def get_transform():
@@ -190,3 +189,98 @@ class SequentialGrainSpace(ContinualDataset):
     @staticmethod
     def get_minibatch_size():
         return SequentialGrainSpace.get_batch_size()
+
+class SplitGrainSpace(SequentialGrainSpace):
+
+    NAME = 'split-GrainSpace'
+    SETTING = 'class-il'
+    N_CLASSES = 7
+    
+    N_CLASSES_PER_TASK = 2
+    N_TASKS = 6
+    # split NORMAL into 6 subsets
+    # Task1: NOR1, AP
+    # Task2: NOR2, BN
+    # Task3: NOR3, BP
+    # Task4: NOR4, FS
+    # Task5: NOR5, MY
+    # Task6: NOR6, SD
+    
+    
+    TRANSFORM = transforms.Compose(
+            [
+             transforms.RandomResizedCrop(224),
+             transforms.RandomHorizontalFlip(),
+             transforms.ToTensor(),
+             transforms.Normalize([0.4254, 0.3929, 0.2554],
+                                  [0.1206, 0.1556, 0.1535])
+            ])
+    
+    def __init__(self, args: Namespace) -> None:
+        super().__init__(args)
+        self.init = False
+        self.f1 = F1Score(task="multiclass", num_classes=self.num_classes, average="macro")
+        
+    def get_data_loaders(self):
+        transform = self.TRANSFORM
+
+        test_transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                self.get_normalization_transform()
+        ])
+        
+        train_path = self.args.dataset_path + '/train'
+        val_path = self.args.dataset_path + '/val'
+        test_path = self.args.dataset_path + '/test'
+        
+        train_dataset = GrainDataset(train_path, transform=transform)
+        self.class_to_idx = train_dataset.class_to_idx
+        self.classes = train_dataset.classes
+        
+        if self.args.validation:
+            test_dataset = ImageFolder(val_path, transform=test_transform)
+        else:
+            test_dataset = ImageFolder(test_path, transform=test_transform)
+            
+            
+        if not self.init:
+            NOR_mask = torch.tensor(train_dataset.targets) == train_dataset.class_to_idx['NOR']
+            NOR_indices = NOR_mask.nonzero().reshape(-1)
+            # shuffle the index then split it into N_TASKS subsets
+            self.train_NOR_subsets = NOR_indices[torch.randperm(NOR_indices.shape[0])].chunk(self.N_TASKS)
+            
+            # Test set
+            NOR_mask = torch.tensor(test_dataset.targets) == test_dataset.class_to_idx['NOR']
+            NOR_indices = NOR_mask.nonzero().reshape(-1)
+            # shuffle the index then split it into N_TASKS subsets
+            self.test_NOR_subsets = NOR_indices.chunk(self.N_TASKS)
+            
+            self.init = True
+           
+           
+        def gen_loader(dataset, current_NOR_indices, train):
+            # find current task index
+            task_class = self.i if self.i < dataset.class_to_idx['NOR'] else self.i + 1
+            task_mask = torch.tensor(dataset.targets) == task_class
+            task_indices = task_mask.nonzero().reshape(-1)
+            # concat the indices
+            task_indices = torch.cat((current_NOR_indices, task_indices))
+            task_subset = Subset(dataset, task_indices)
+            task_loader = DataLoader(task_subset,
+                                      batch_size=32, shuffle=train, num_workers=4)
+            
+            return task_loader
+        
+        train_loader = gen_loader(train_dataset, self.train_NOR_subsets[self.i], True)
+        test_loader = gen_loader(test_dataset, self.test_NOR_subsets[self.i], False)
+                              
+        # add all previous test loaders (CL scenario)
+        self.test_loaders.append(test_loader)
+        self.train_loader = train_loader
+    
+        self.i += 1
+    
+        return train_loader, test_loader
+    
