@@ -28,9 +28,8 @@ class GrainDataset(ImageFolder):
     def __init__(self, root, transform=None, target_transform=None):
         super(GrainDataset, self).__init__(root, transform=transform, target_transform=target_transform)
         self.not_aug_transform = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor()
+                transforms.Resize((256, 144)),
+                transforms.ToTensor(),
             ])
             
         # don't lazy load
@@ -112,19 +111,24 @@ class SequentialGrainSpace(ContinualDataset):
     
     TRANSFORM = transforms.Compose(
             [
-             transforms.RandomResizedCrop(224),
+             transforms.Resize((256, 144)),
              transforms.RandomHorizontalFlip(),
+             transforms.RandomVerticalFlip(),
              transforms.ToTensor(),
-             transforms.Normalize([0.4254, 0.3929, 0.2554],
-                                  [0.1206, 0.1556, 0.1535])
+             transforms.Normalize([0.4829, 0.5062, 0.3941],
+                                  [0.1385, 0.2133, 0.2385])
             ])
-
+    
+    def __init__(self, args: Namespace) -> None:
+        super().__init__(args)
+        self.init = False
+        # self.f1 = F1Score(task="multiclass", num_classes=self.N_CLASSES, average="macro")
+        
     def get_data_loaders(self):
         transform = self.TRANSFORM
 
         test_transform = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
+                transforms.Resize((256, 144)),
                 transforms.ToTensor(),
                 self.get_normalization_transform()
         ])
@@ -164,14 +168,14 @@ class SequentialGrainSpace(ContinualDataset):
 
     @staticmethod
     def get_normalization_transform():
-        transform = transforms.Normalize([0.4254, 0.3929, 0.2554],
-                                         [0.1206, 0.1556, 0.1535])
+        transform = transforms.Normalize([0.4829, 0.5062, 0.3941],
+                                         [0.1385, 0.2133, 0.2385])
         return transform
 
     @staticmethod
     def get_denormalization_transform():
-        transform = DeNormalize([0.4254, 0.3929, 0.2554],
-                                [0.1206, 0.1556, 0.1535])
+        transform = DeNormalize([0.4829, 0.5062, 0.3941],
+                                [0.1385, 0.2133, 0.2385])
         return transform
 
     @staticmethod
@@ -207,26 +211,21 @@ class SplitGrainSpace(SequentialGrainSpace):
     # Task6: NOR6, SD
     
     
-    TRANSFORM = transforms.Compose(
-            [
-             transforms.RandomResizedCrop(224),
-             transforms.RandomHorizontalFlip(),
-             transforms.ToTensor(),
-             transforms.Normalize([0.4254, 0.3929, 0.2554],
-                                  [0.1206, 0.1556, 0.1535])
-            ])
-    
-    def __init__(self, args: Namespace) -> None:
-        super().__init__(args)
-        self.init = False
-        self.f1 = F1Score(task="multiclass", num_classes=self.num_classes, average="macro")
+    # TRANSFORM = transforms.Compose(
+    #         [
+    #          transforms.Resize((256, 144)),
+    #          transforms.RandomHorizontalFlip(),
+    #          transforms.RandomVerticalFlip(),
+    #          transforms.ToTensor(),
+    #          transforms.Normalize([0.4829, 0.5062, 0.3941],
+    #                               [0.1385, 0.2133, 0.2385])
+    #         ])
         
     def get_data_loaders(self):
         transform = self.TRANSFORM
 
         test_transform = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
+                transforms.Resize((256, 144)),
                 transforms.ToTensor(),
                 self.get_normalization_transform()
         ])

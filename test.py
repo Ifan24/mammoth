@@ -5,18 +5,21 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data import Subset
 import torch
 from datasets.grain_space import GrainDataset
+import matplotlib.pyplot as plt
 # init = GrainDataset(root='/home/ruiqi/GrainSpace/data/WHEAT_R1-14_G600/train')
-
 # print(init.class_to_idx)
 
 transform = transforms.Compose(
-            [transforms.RandomResizedCrop(224),
+            [
+             transforms.Resize((256, 144)),
              transforms.RandomHorizontalFlip(),
+             transforms.RandomVerticalFlip(),
+             transforms.RandomRotation((0, 360)),
              transforms.ToTensor(),
-             transforms.Normalize([0.4254, 0.3929, 0.2554],
-                                  [0.1206, 0.1556, 0.1535])
-            ])
-            
+            #  transforms.Normalize([0.4829, 0.5062, 0.3941],
+            #                       [0.1385, 0.2133, 0.2385])
+             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])            
 train_path = 'GrainSpace/WHEAT_R1-14_G600/train'
 train_dataset = GrainDataset(train_path, transform=transform)
 # print(train_dataset.class_to_idx['NOR'])
@@ -64,10 +67,20 @@ for t in range(N_TASKS):
     
     for batch_idx, sample in enumerate(train_loader):
         (data, target, not_arg) = sample
-        # print(data.shape)
-        # print(target.shape)
-        # print(target)
-        # break
+        print(data.shape)
+        print(target.shape)
+        print(target)
+        image = data[0].permute(1, 2, 0)
+        plt.imshow(image)
+        plt.show()
+        # cailculate mean and std
+        mean, std = data[0].mean([1,2]), data[0].std([1,2])
+         
+        # print mean and std
+        print("Mean and Std of normalized image:")
+        print("Mean of the image:", mean)
+        print("Std of the image:", std)
+        break
         for tmp in target:
             tmp = tmp.item()
             if tmp in count:

@@ -20,6 +20,8 @@ try:
     import wandb
 except ImportError:
     wandb = None
+from torchmetrics.classification import F1Score
+from sklearn.metrics import classification_report, f1_score
 
 def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> None:
     """
@@ -42,7 +44,7 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
                    dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
 
 
-def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tuple[list, list]:
+def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False, print_f1=True) -> Tuple[list, list]:
     """
     Evaluates the accuracy of the model for each past task.
     :param model: the model to be evaluated
@@ -53,6 +55,9 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
     status = model.net.training
     model.net.eval()
     accs, accs_mask_classes = [], []
+    all_outputs, all_labels = [], []
+    # dataset.f1 = dataset.f1.to(model.device)
+    
     for k, test_loader in enumerate(dataset.test_loaders):
         if last and k < len(dataset.test_loaders) - 1:
             continue
@@ -67,13 +72,14 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
                     outputs = model(inputs, k)
                 else:
                     outputs = model(inputs)
-
+                
                 _, pred = torch.max(outputs.data, 1)
                 # how many samples for that task are correctly classified
                 correct += torch.sum(pred == labels).item()
                 total += labels.shape[0]
                 if 'GrainSpace' in dataset.NAME:
-                    f1 = dataset.f1(pred, labels)
+                    all_outputs.append(pred)
+                    all_labels.append(labels)
                     
                 if dataset.SETTING == 'class-il':
                     # mask the outputs for the other classes
@@ -84,9 +90,17 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
         accs.append(correct / total * 100
                     if 'class-il' in model.COMPATIBILITY else 0)
         accs_mask_classes.append(correct_mask_classes / total * 100)
-
+    
+    preds = torch.cat([x for x in all_outputs])
+    y = torch.cat([x for x in all_labels])
+    
+    f1 = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average='macro', zero_division=1) * 100.0
+    if 'GrainSpace' in dataset.NAME and print_f1:
+        target_names = ['AP', 'BN', 'BP', 'FS', 'MY', 'NOR', 'SD']
+        print(classification_report(y.cpu(), preds.cpu(), target_names=target_names, labels=[0,1,2,3,4,5,6], zero_division=1))
+        
     model.net.train(status)
-    return accs, accs_mask_classes
+    return accs, accs_mask_classes, f1
 
 
 def train(model: ContinualModel, dataset: ContinualDataset,
@@ -119,7 +133,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             model.net.train()
             _, _ = dataset_copy.get_data_loaders()
         if model.NAME != 'icarl' and model.NAME != 'pnn':
-            random_results_class, random_results_task = evaluate(model, dataset_copy)
+            random_results_class, random_results_task, _ = evaluate(model, dataset_copy, print_f1=False)
 
     print(file=sys.stderr)
     for t in range(dataset.N_TASKS):
@@ -128,7 +142,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         if hasattr(model, 'begin_task'):
             model.begin_task(dataset)
         if t and not args.ignore_other_metrics:
-            accs = evaluate(model, dataset, last=True)
+            accs = evaluate(model, dataset, last=True, print_f1=False)
             results[t-1] = results[t-1] + accs[0]
             if dataset.SETTING == 'class-il':
                 results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
@@ -168,8 +182,8 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         results.append(accs[0])
         results_mask_classes.append(accs[1])
 
-        mean_acc = np.mean(accs, axis=1)
-        print_mean_accuracy(mean_acc, t + 1, dataset.SETTING)
+        mean_acc = np.mean(accs[:2], axis=1)
+        print_mean_accuracy(mean_acc, t + 1, dataset, accs[2])
 
         if not args.disable_log:
             logger.log(mean_acc)
@@ -177,6 +191,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
         if not args.nowand:
             d2={'RESULT_class_mean_accs': mean_acc[0], 'RESULT_task_mean_accs': mean_acc[1],
+                'Result_f1': accs[2],
                 **{f'RESULT_class_acc_{i}': a for i, a in enumerate(accs[0])},
                 **{f'RESULT_task_acc_{i}': a for i, a in enumerate(accs[1])}}
 

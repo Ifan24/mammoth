@@ -13,28 +13,35 @@ import numpy as np
 from utils import create_if_not_exists
 from utils.conf import base_path
 from utils.metrics import backward_transfer, forward_transfer, forgetting
+from datasets.utils.continual_dataset import ContinualDataset
 
 useless_args = ['dataset', 'tensorboard', 'validation', 'model',
                 'csv_log', 'notes', 'load_best_args']
 
 
 def print_mean_accuracy(mean_acc: np.ndarray, task_number: int,
-                        setting: str) -> None:
+                        dataset: ContinualDataset, f1: float) -> None:
     """
     Prints the mean accuracy on stderr.
     :param mean_acc: mean accuracy value
     :param task_number: task index
-    :param setting: the setting of the benchmark
+    :param dataset: the dataset
+    :param f1: f1 score
     """
-    if setting == 'domain-il':
+    if dataset.SETTING == 'domain-il':
         mean_acc, _ = mean_acc
         print('\nAccuracy for {} task(s): {} %'.format(
             task_number, round(mean_acc, 2)), file=sys.stderr)
     else:
         mean_acc_class_il, mean_acc_task_il = mean_acc
-        print('\nAccuracy for {} task(s): \t [Class-IL]: {} %'
-              ' \t [Task-IL]: {} %\n'.format(task_number, round(
-                  mean_acc_class_il, 2), round(mean_acc_task_il, 2)), file=sys.stderr)
+        if 'GrainSpace' in dataset.NAME:
+            print('\nAccuracy for {} task(s): \t [Class-IL]: {} %'
+              ' \t [Task-IL]: {} % \t [F1-score]: {} %\n'.format(task_number, round(
+                  mean_acc_class_il, 2), round(mean_acc_task_il, 2), round(f1, 2)), file=sys.stderr)
+        else:
+            print('\nAccuracy for {} task(s): \t [Class-IL]: {} %'
+                  ' \t [Task-IL]: {} %\n'.format(task_number, round(
+                      mean_acc_class_il, 2), round(mean_acc_task_il, 2)), file=sys.stderr)
 
 
 class Logger:
@@ -45,6 +52,7 @@ class Logger:
         if setting_str == 'class-il':
             self.accs_mask_classes = []
             self.fullaccs_mask_classes = []
+            self.f1_score = []
         self.setting = setting_str
         self.dataset = dataset_str
         self.model = model_str
@@ -65,6 +73,7 @@ class Logger:
             'fwt_mask_classes': self.fwt_mask_classes,
             'bwt_mask_classes': self.bwt_mask_classes,
             'forgetting_mask_classes': self.forgetting_mask_classes,
+            'f1_score': self.f1_score,
         }
         if self.setting == 'class-il':
             dic['accs_mask_classes'] = self.accs_mask_classes
@@ -84,6 +93,7 @@ class Logger:
         if self.setting == 'class-il':
             self.accs_mask_classes = dic['accs_mask_classes']
             self.fullaccs_mask_classes = dic['fullaccs_mask_classes']
+        self.f1_score = dic['f1_score']
 
     def rewind(self, num):
         self.accs = self.accs[:-num]
@@ -99,6 +109,8 @@ class Logger:
         if self.setting == 'class-il':
             self.accs_mask_classes = self.accs_mask_classes[:-num]
             self.fullaccs_mask_classes = self.fullaccs_mask_classes[:-num]
+        self.f1_score = self.f1_score[:-num]
+        
 
     def add_fwt(self, results, accs, results_mask_classes, accs_mask_classes):
         self.fwt = forward_transfer(results, accs)
@@ -130,9 +142,10 @@ class Logger:
 
     def log_fullacc(self, accs):
         if self.setting == 'class-il':
-            acc_class_il, acc_task_il = accs
+            acc_class_il, acc_task_il, f1 = accs
             self.fullaccs.append(acc_class_il)
             self.fullaccs_mask_classes.append(acc_task_il)
+            self.f1_score.append(f1)
 
     def write(self, args: Dict[str, Any]) -> None:
         """
@@ -147,6 +160,9 @@ class Logger:
         for i, fa in enumerate(self.fullaccs):
             for j, acc in enumerate(fa):
                 wrargs['accuracy_' + str(j + 1) + '_task' + str(i + 1)] = acc
+                
+        for i, f1 in enumerate(self.f1_score):
+            wrargs['F1_score_task' + str(i + 1)] = f1
 
         wrargs['forward_transfer'] = self.fwt
         wrargs['backward_transfer'] = self.bwt
