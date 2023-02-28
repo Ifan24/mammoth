@@ -14,11 +14,11 @@ transform = transforms.Compose(
              transforms.Resize((256, 144)),
              transforms.RandomHorizontalFlip(),
              transforms.RandomVerticalFlip(),
-             transforms.RandomRotation((0, 360)),
+            #  transforms.RandomRotation((0, 360)),
              transforms.ToTensor(),
             #  transforms.Normalize([0.4829, 0.5062, 0.3941],
             #                       [0.1385, 0.2133, 0.2385])
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
             ])            
 train_path = 'GrainSpace/WHEAT_R1-14_G600/train'
 train_dataset = GrainDataset(train_path, transform=transform)

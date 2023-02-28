@@ -32,11 +32,13 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
     :param dataset: the continual dataset
     :param k: the task index
     """
-    if dataset.NAME == 'split-GrainSpace':
+    if 'GrainSpace' in dataset.NAME:
         # only allow to make prediction for the classes belonging to the target task
-        norIndex = dataset.class_to_idx['NOR']
-        task_class = k if k < norIndex else k + 1
-        non_task_indices = [i for i, c in enumerate(dataset.classes) if i != task_class and i != norIndex]
+        # norIndex = dataset.class_to_idx['NOR']
+        # task_class = k if k < norIndex else k + 1
+        # non_task_indices = [i for i, c in enumerate(dataset.classes) if i != task_class and i != norIndex]
+        task_classes = dataset.get_current_task_classes(k)
+        non_task_indices = [i for i, c in enumerate(dataset.classes) if i not in task_classes]
         outputs[:, non_task_indices] = -float('inf')
     else:
         outputs[:, 0:k * dataset.N_CLASSES_PER_TASK] = -float('inf')
@@ -91,11 +93,12 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False, print
                     if 'class-il' in model.COMPATIBILITY else 0)
         accs_mask_classes.append(correct_mask_classes / total * 100)
     
-    preds = torch.cat([x for x in all_outputs])
-    y = torch.cat([x for x in all_labels])
-    
-    f1 = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average='macro', zero_division=1) * 100.0
+    f1 = 0
     if 'GrainSpace' in dataset.NAME and print_f1:
+        preds = torch.cat([x for x in all_outputs])
+        y = torch.cat([x for x in all_labels])
+        
+        f1 = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average='macro', zero_division=1) * 100.0
         target_names = ['AP', 'BN', 'BP', 'FS', 'MY', 'NOR', 'SD']
         print(classification_report(y.cpu(), preds.cpu(), target_names=target_names, labels=[0,1,2,3,4,5,6], zero_division=1))
         

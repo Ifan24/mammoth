@@ -34,6 +34,7 @@ class Joint(ContinualModel):
         self.old_labels = []
         self.current_task = 0
         # self.old_indices = []
+        self.dataset = None
     def end_task(self, dataset):
         if dataset.SETTING != 'domain-il':
             if 'GrainSpace' not in dataset.NAME:
@@ -55,8 +56,13 @@ class Joint(ContinualModel):
             # prepare dataloader
             
             if 'GrainSpace' in dataset.NAME:
-                temp_dataset = dataset.train_loader.dataset.dataset
-                
+                if self.dataset is None:
+                    self.dataset = dataset.train_loader.dataset.dataset
+                else:
+                    temp_dataset = dataset.train_loader.dataset.dataset
+                    self.dataset = torch.utils.data.ConcatDataset([self.dataset, temp_dataset])
+                    
+                temp_dataset = self.dataset
             else:
                 all_data, all_labels = None, None
                 for i in range(len(self.old_data)):

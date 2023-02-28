@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -122,6 +122,7 @@ class SequentialGrainSpace(ContinualDataset):
     def __init__(self, args: Namespace) -> None:
         super().__init__(args)
         self.init = False
+        self.norIndex = 0
         # self.f1 = F1Score(task="multiclass", num_classes=self.N_CLASSES, average="macro")
         
     def get_data_loaders(self):
@@ -138,6 +139,9 @@ class SequentialGrainSpace(ContinualDataset):
         test_path = self.args.dataset_path + '/test'
         
         train_dataset = GrainDataset(train_path, transform=transform)
+        self.norIndex = train_dataset.class_to_idx['NOR']
+        self.class_to_idx = train_dataset.class_to_idx
+        self.classes = train_dataset.classes
         
         if self.args.validation:
             test_dataset = ImageFolder(val_path, transform=test_transform)
@@ -147,7 +151,9 @@ class SequentialGrainSpace(ContinualDataset):
         train, test = store_grain_masked_loaders(train_dataset, test_dataset, self)
         return train, test
         
-
+    def get_current_task_classes(self, k) -> List[int]:
+        return list(range(k, k + self.N_CLASSES_PER_TASK))
+        
     @staticmethod
     def get_transform():
         transform = transforms.Compose(
@@ -194,9 +200,9 @@ class SequentialGrainSpace(ContinualDataset):
     def get_minibatch_size():
         return SequentialGrainSpace.get_batch_size()
 
-class SplitGrainSpace(SequentialGrainSpace):
+class SplitGrainSpaceA(SequentialGrainSpace):
 
-    NAME = 'split-GrainSpace'
+    NAME = 'split-GrainSpaceA'
     SETTING = 'class-il'
     N_CLASSES = 7
     
@@ -209,17 +215,7 @@ class SplitGrainSpace(SequentialGrainSpace):
     # Task4: NOR4, FS
     # Task5: NOR5, MY
     # Task6: NOR6, SD
-    
-    
-    # TRANSFORM = transforms.Compose(
-    #         [
-    #          transforms.Resize((256, 144)),
-    #          transforms.RandomHorizontalFlip(),
-    #          transforms.RandomVerticalFlip(),
-    #          transforms.ToTensor(),
-    #          transforms.Normalize([0.4829, 0.5062, 0.3941],
-    #                               [0.1385, 0.2133, 0.2385])
-    #         ])
+
         
     def get_data_loaders(self):
         transform = self.TRANSFORM
@@ -237,6 +233,7 @@ class SplitGrainSpace(SequentialGrainSpace):
         train_dataset = GrainDataset(train_path, transform=transform)
         self.class_to_idx = train_dataset.class_to_idx
         self.classes = train_dataset.classes
+        self.norIndex = train_dataset.class_to_idx['NOR']
         
         if self.args.validation:
             test_dataset = ImageFolder(val_path, transform=test_transform)
@@ -282,4 +279,97 @@ class SplitGrainSpace(SequentialGrainSpace):
         self.i += 1
     
         return train_loader, test_loader
+        
+        
+    def get_current_task_classes(self, k) -> List[int]:
+        classes = []
+        classes.append(k if k < self.norIndex else k + 1)
+        classes.append(self.class_to_idx['NOR'])
+        return classes
+
+class SplitGrainSpaceB(SequentialGrainSpace):
+
+    NAME = 'split-GrainSpaceB'
+    SETTING = 'class-il'
+    N_CLASSES = 7
+    
+    N_CLASSES_PER_TASK = 3
+    N_TASKS = 3
+    # split NORMAL into 3 subsets
+    # Task1: NOR1, AP, BN
+    # Task2: NOR2, BP, FS
+    # Task3: NOR3, MY, SD
+
+        
+    def get_data_loaders(self):
+        transform = self.TRANSFORM
+
+        test_transform = transforms.Compose([
+                transforms.Resize((256, 144)),
+                transforms.ToTensor(),
+                self.get_normalization_transform()
+        ])
+        
+        train_path = self.args.dataset_path + '/train'
+        val_path = self.args.dataset_path + '/val'
+        test_path = self.args.dataset_path + '/test'
+        
+        train_dataset = GrainDataset(train_path, transform=transform)
+        self.class_to_idx = train_dataset.class_to_idx
+        self.classes = train_dataset.classes
+        
+        if self.args.validation:
+            test_dataset = ImageFolder(val_path, transform=test_transform)
+        else:
+            test_dataset = ImageFolder(test_path, transform=test_transform)
+            
+            
+        if not self.init:
+            NOR_mask = torch.tensor(train_dataset.targets) == train_dataset.class_to_idx['NOR']
+            NOR_indices = NOR_mask.nonzero().reshape(-1)
+            # shuffle the index then split it into N_TASKS subsets
+            self.train_NOR_subsets = NOR_indices[torch.randperm(NOR_indices.shape[0])].chunk(self.N_TASKS)
+            
+            # Test set
+            NOR_mask = torch.tensor(test_dataset.targets) == test_dataset.class_to_idx['NOR']
+            NOR_indices = NOR_mask.nonzero().reshape(-1)
+            # shuffle the index then split it into N_TASKS subsets
+            self.test_NOR_subsets = NOR_indices.chunk(self.N_TASKS)
+            
+            self.init = True
+           
+           
+        def gen_loader(dataset, current_NOR_indices, train):
+            # find current task index
+            task_class = self.get_current_task_classes(self.i)
+            task_mask = torch.logical_or(torch.tensor(dataset.targets) == task_class[0], torch.tensor(dataset.targets) == task_class[1])
+            task_indices = task_mask.nonzero().reshape(-1)
+            
+            # concat the indices
+            task_indices = torch.cat((current_NOR_indices, task_indices))
+            task_subset = Subset(dataset, task_indices)
+            task_loader = DataLoader(task_subset,
+                                      batch_size=32, shuffle=train, num_workers=4)
+            
+            return task_loader
+        
+        train_loader = gen_loader(train_dataset, self.train_NOR_subsets[self.i], True)
+        test_loader = gen_loader(test_dataset, self.test_NOR_subsets[self.i], False)
+                              
+        # add all previous test loaders (CL scenario)
+        self.test_loaders.append(test_loader)
+        self.train_loader = train_loader
+    
+        self.i += 1
+    
+        return train_loader, test_loader
+        
+        
+    def get_current_task_classes(self, k) -> List[int]:
+        task_classes = [c for c in self.classes if c != 'NOR']
+        task_classes = [v for (key, v) in self.class_to_idx.items() if key in task_classes]
+        task = np.array_split(task_classes, self.N_TASKS)
+        task = [l.tolist() + [self.class_to_idx['NOR']] for l in task]
+        return task[k]
+        
     

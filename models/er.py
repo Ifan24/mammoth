@@ -26,6 +26,8 @@ class Er(ContinualModel):
     def __init__(self, backbone, loss, args, transform):
         super(Er, self).__init__(backbone, loss, args, transform)
         self.buffer = Buffer(self.args.buffer_size, self.device)
+        # Creates once at the beginning of training
+        self.scaler = torch.cuda.amp.GradScaler()
 
     def observe(self, inputs, labels, not_aug_inputs):
 
@@ -33,15 +35,30 @@ class Er(ContinualModel):
 
         self.opt.zero_grad()
         if not self.buffer.is_empty():
+            # add buffer data to the current batch
             buf_inputs, buf_labels = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.transform)
             inputs = torch.cat((inputs, buf_inputs))
             labels = torch.cat((labels, buf_labels))
-
-        outputs = self.net(inputs)
-        loss = self.loss(outputs, labels)
-        loss.backward()
-        self.opt.step()
+        
+        if self.args.fp16:
+            # Casts operations to mixed precision
+            with torch.amp.autocast(device_type='cuda', dtype=torch.float16):
+                outputs = self.net(inputs)
+                loss = self.loss(outputs, labels)
+            # Scales the loss, and calls backward()
+            # to create scaled gradients
+            self.scaler.scale(loss).backward()
+            # Unscales gradients and calls
+            # or skips optimizer.step()
+            self.scaler.step(self.opt)
+            # Updates the scale for next iteration
+            self.scaler.update()
+        else:
+            outputs = self.net(inputs)
+            loss = self.loss(outputs, labels)
+            loss.backward()
+            self.opt.step()
 
         self.buffer.add_data(examples=not_aug_inputs,
                              labels=labels[:real_batch_size])

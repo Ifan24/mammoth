@@ -35,6 +35,7 @@ def add_experiment_args(parser: ArgumentParser) -> None:
                         help='Batch size.')
 
     parser.add_argument('--distributed', type=str, default='no', choices=['no', 'dp', 'ddp'])
+    parser.add_argument('--fp16', help="Use fp16 to train", action="store_true")
 
 
 def add_management_args(parser: ArgumentParser) -> None:
