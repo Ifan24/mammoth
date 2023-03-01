@@ -26,7 +26,7 @@ def print_mean_accuracy(mean_acc: np.ndarray, task_number: int,
     :param mean_acc: mean accuracy value
     :param task_number: task index
     :param dataset: the dataset
-    :param f1: f1 score
+    :param f1: marco f1 score
     """
     if dataset.SETTING == 'domain-il':
         mean_acc, _ = mean_acc
@@ -142,7 +142,7 @@ class Logger:
 
     def log_fullacc(self, accs):
         if self.setting == 'class-il':
-            acc_class_il, acc_task_il, f1 = accs
+            acc_class_il, acc_task_il, f1, _ = accs
             self.fullaccs.append(acc_class_il)
             self.fullaccs_mask_classes.append(acc_task_il)
             self.f1_score.append(f1)

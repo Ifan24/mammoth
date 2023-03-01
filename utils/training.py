@@ -93,17 +93,26 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False, print
                     if 'class-il' in model.COMPATIBILITY else 0)
         accs_mask_classes.append(correct_mask_classes / total * 100)
     
-    f1 = 0
+    macro_f1 = 0
+    format_f1_scores = []
     if 'GrainSpace' in dataset.NAME and print_f1:
+        print("\n==================== F1 scores ====================")
         preds = torch.cat([x for x in all_outputs])
         y = torch.cat([x for x in all_labels])
         
-        f1 = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average='macro', zero_division=1) * 100.0
         target_names = ['AP', 'BN', 'BP', 'FS', 'MY', 'NOR', 'SD']
+        # macro f1 score
+        macro_f1 = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average='macro', zero_division=1) * 100.0
+        # print F1 score for each class
+        f1_scores = f1_score(y.cpu(), preds.cpu(), labels=[0,1,2,3,4,5,6], average=None, zero_division=1)
+        for i, f1 in enumerate(f1_scores):
+            print(f"F1 score for class {target_names[i]}: {(f1*100.0):.2f} %")
+            format_f1_scores.append((target_names[i], f1*100.0))
+        
         print(classification_report(y.cpu(), preds.cpu(), target_names=target_names, labels=[0,1,2,3,4,5,6], zero_division=1))
         
     model.net.train(status)
-    return accs, accs_mask_classes, f1
+    return accs, accs_mask_classes, macro_f1, format_f1_scores
 
 
 def train(model: ContinualModel, dataset: ContinualDataset,
@@ -136,7 +145,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             model.net.train()
             _, _ = dataset_copy.get_data_loaders()
         if model.NAME != 'icarl' and model.NAME != 'pnn':
-            random_results_class, random_results_task, _ = evaluate(model, dataset_copy, print_f1=False)
+            random_results_class, random_results_task, _, _ = evaluate(model, dataset_copy, print_f1=False)
 
     print(file=sys.stderr)
     for t in range(dataset.N_TASKS):
@@ -194,9 +203,11 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
         if not args.nowand:
             d2={'RESULT_class_mean_accs': mean_acc[0], 'RESULT_task_mean_accs': mean_acc[1],
-                'Result_f1': accs[2],
                 **{f'RESULT_class_acc_{i}': a for i, a in enumerate(accs[0])},
-                **{f'RESULT_task_acc_{i}': a for i, a in enumerate(accs[1])}}
+                **{f'RESULT_task_acc_{i}': a for i, a in enumerate(accs[1])}, 
+                'Result_f1': accs[2],
+                **{f'RESULT_class_F1_{i}': a for i, a in accs[3]}
+                }
 
             wandb.log(d2)
 
@@ -208,6 +219,11 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         if model.NAME != 'icarl' and model.NAME != 'pnn':
             logger.add_fwt(results, random_results_class,
                     results_mask_classes, random_results_task)
+        if 'GrainSpace' in dataset.NAME:
+            table = wandb.Table(data=accs[3], columns = ["Class label", "F1"])
+            wandb.log({"RESULT_Class_F1" : wandb.plot.bar(table, "Class label", "F1",
+                                           title="Class F1 score")})
+                
 
     if not args.disable_log:
         logger.write(vars(args))
